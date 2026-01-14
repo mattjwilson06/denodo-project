@@ -1,10 +1,26 @@
 #import "template.typ": *
 
 #show: project.with(
-  title: "Denodo Logic Extraction",
-  authors: "Robinson Ryan"
+  title: "Denodo Logic Replacement",
+  authors: "Matthew Wilson"
 )
 
+
+
+#major-heading[Summary]
+Detailed below is a proposed approach for migrating the current transformation logic from Denodo to Snowflake. The process can be broken into 4 main parts. 
+
+1. Extracting the transformation view logic from Denodo.
+2. Cleaning and refactoring the logic to be Snowflake compatible while preserving the business logic. 
+3. Deploying the views to Snowflake without breaking view dependencies.
+4. Validating the logic is successfully refactored into snowflake. 
+
+
+
+#figure(
+  image("Overview.png", width: 100%),
+  caption: [High Level Overview],
+)
 
 
 #major-heading[Phase 1: Denodo Logic Extraction]
@@ -16,7 +32,8 @@ This will reduce the potential for human error when copying the extremely large 
 
 Denodo views are built in layers; starting from the raw base layers, progressing in complexity as more integration logic is used to maniupate these base views and create more views on top of them forming a hierarchical strcuture. 
 
-To simplify this complexity, we will programmatically capture a views dependencies by using built in Denodo functions and then ordering the views by their dependencies. In this way we can recreate the views in the correct order within snowflake,.
+To simplify this complexity, we will programmatically capture a views dependencies by using built in Denodo functions and then ordering the views by their dependencies. In this way we can recreate the views in the correct order within Snowflake.
+
 
 
 #section-heading[Technical Implementation]
@@ -31,9 +48,8 @@ The extraction script will use this ODBC connection to query Denodo's internal s
 - #link("https://community.denodo.com/docs/html/browse/9.3/en/vdp/vql/stored_procedures/predefined_stored_procedures/view_dependencies")[`GET_VIEWS()`]: Gets the VQL definition for virtual Denodo scripts. VQL being Denodo-specific SQL.
 - #link("https://community.denodo.com/docs/html/browse/9.3/en/vdp/vql/stored_procedures/predefined_stored_procedures/view_dependencies")[`VIEW_DEPENDENCIES()`]: Maps the lineage to ensure views are recreated in the correct order in Snowflake. There will be an additional sorting algorithm that we will use to ensure views are ordered correctly.
 
-#major-heading[Phase 2: Logic Cleaning (Refactor)]
+#major-heading[Phase 2: Logic Cleaning and Refactor]
 
-#section-heading[Summary]
 
 
 
@@ -45,10 +61,24 @@ As well as this we will create a Raw Srouce to Denodo Name Mapping. Since Snowfl
 
 There may of course still be some manual work required in the cases where a function doesn't map 1-1 to a Snowflake equivalent. These functions that are not easily replaceable can be flagged with a script, so that manual attention can be given to them. 
 
-#major-heading[Creation in Snowflake]
-The migration shifts the "Transformation" (T) in ELT from a virtualization layer to a cloud data warehouse:
+#pagebreak()
 
-- *Source:* Denodo Virtual Views (VQL) – Logic executed "on-the-fly" against source systems.
-- *Target:* Snowflake Views/Dynamic Tables – Logic executed natively on data landed by Informatica.
+#major-heading[Phase 3: Creation in Snowflake]
 
-#major-heading[Validation of Created Views]
+
+The next phase we will deploy the SQL scripts to snowflake in batches to avoid wasting processing capacity if there are any scripting mistakes and errors from the previous phases.
+
+The scripts will be deployed with respect to the view hierarcy established in Phase 1, so that batches of views with no dependencies will be deployed first, followed by views that only have dependencies on those first set deployed and so on. 
+
+#figure(
+  image("Depencies.png", width: 80%),
+  caption: [View Dependency & Deployment Hierarchy],
+)
+
+#major-heading[Phase 4: Validation]
+
+
+This phase will run concurrently with the creation phase. We will validate each layer before proceeding to dependent layers. This will ensure that the foundational data is correct before additional complexity is added with views on top of other views, meaning that errors can be found sooner rather than later. 
+
+It may be possible to automate parts of this with python pulling data from Denodo and Snowflake, to run row checks, schema checks, and converting data to strings then using a hash algorithm to ensure that data from both systems is exactly the same. 
+
